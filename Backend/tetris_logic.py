@@ -1,3 +1,5 @@
+import socket
+import pickle
 import pygame
 import random
 
@@ -9,7 +11,6 @@ SCREEN_WIDTH = BOARD_WIDTH * CELL_SIZE
 SCREEN_HEIGHT = BOARD_HEIGHT * CELL_SIZE
 FPS = 10  # Frames per second
 
-# Define the shapes of the tetrominoes
 TETROMINOES = [
     [[1, 1, 1, 1]],  # I shape
     [[1, 1], [1, 1]],  # O shape
@@ -66,7 +67,6 @@ class Tetris:
             self.lock_tetromino()
 
     def lock_tetromino(self):
-        # Lock the current tetromino into the board
         for y, row in enumerate(self.current_tetromino):
             for x, cell in enumerate(row):
                 if cell:
@@ -84,50 +84,45 @@ class Tetris:
             del self.board[i]
             self.board.insert(0, [0] * BOARD_WIDTH)
 
-    def draw_board(self, screen):
-        for y, row in enumerate(self.board):
-            for x, cell in enumerate(row):
-                if cell:
-                    pygame.draw.rect(screen, (255, 255, 255),
-                                     (x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE))
-        for y, row in enumerate(self.current_tetromino):
-            for x, cell in enumerate(row):
-                if cell:
-                    pygame.draw.rect(screen, (255, 255, 255),
-                                     ((x + self.tetromino_x) * CELL_SIZE,
-                                      (y + self.tetromino_y) * CELL_SIZE,
-                                      CELL_SIZE, CELL_SIZE))
+    def get_board(self):
+        return self.board
 
-def game_loop():
-    pygame.init()
-    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-    pygame.display.set_caption('Tetris')
-    clock = pygame.time.Clock()
+def handle_client(conn, tetris):
+    while not tetris.game_over:
+        try:
+            command = conn.recv(1024).decode('utf-8')
+            if command == "LEFT":
+                tetris.move('left')
+            elif command == "RIGHT":
+                tetris.move('right')
+            elif command == "DOWN":
+                tetris.move('down')
+            elif command == "ROTATE":
+                tetris.move('rotate')
 
+            # Send the updated board back to the client
+            conn.sendall(pickle.dumps(tetris.get_board()))
+
+        except Exception as e:
+            print(f"Error: {e}")
+            break
+
+    conn.close()
+
+def start_server():
     tetris = Tetris()
 
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.bind(('localhost', 5000))
+    server_socket.listen(1)
+    print("Server started, waiting for a connection...")
+
     while not tetris.game_over:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                tetris.game_over = True
-            elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_LEFT:
-                    tetris.move('left')
-                elif event.key == pygame.K_RIGHT:
-                    tetris.move('right')
-                elif event.key == pygame.K_DOWN:
-                    tetris.move('down')
-                elif event.key == pygame.K_UP:
-                    tetris.move('rotate')
+        conn, addr = server_socket.accept()
+        print(f"Connected by {addr}")
+        handle_client(conn, tetris)
 
-        tetris.move('down')
-        screen.fill((0, 0, 0))
-        tetris.draw_board(screen)
-        pygame.display.flip()
-        clock.tick(FPS)
-
-    print("Game Over!")
-    pygame.quit()
+    server_socket.close()
 
 if __name__ == "__main__":
-    game_loop()
+    start_server()
